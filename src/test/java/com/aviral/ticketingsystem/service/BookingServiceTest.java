@@ -135,6 +135,8 @@ class BookingServiceTest {
         assertThat(response.totalAmount()).isEqualByComparingTo(new BigDecimal("300.00"));
         assertThat(response.status()).isEqualTo(BookingStatus.PENDING_PAYMENT);
         assertThat(response.expiresAt()).isNotNull();
+        assertThat(response.expiresAt()).isAfter(LocalDateTime.now().minusSeconds(1));
+        assertThat(response.expiresAt()).isBeforeOrEqualTo(LocalDateTime.now().plusMinutes(10).plusSeconds(2));
     }
 
     @Test
@@ -380,5 +382,99 @@ class BookingServiceTest {
                 .hasMessageContaining("invalid ticket price");
 
         verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Regression: Newly created reservation has a future expiry matching the payment window")
+    void createBooking_CalculatesFutureExpiryTimestamp_AccordingToPaymentWindow() {
+        User user = buildUser();
+        Event event = buildEvent();
+        Inventory inventory = buildInventory(event, 50, 0, 0);
+
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(inventoryRepository.findByEventIdWithLock(EVENT_ID)).thenReturn(Optional.of(inventory));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
+            Booking b = inv.getArgument(0);
+            ReflectionTestUtils.setField(b, "id", BOOKING_ID);
+            ReflectionTestUtils.setField(b, "createdAt", LocalDateTime.now());
+            return b;
+        });
+
+        LocalDateTime beforeCreation = LocalDateTime.now();
+        BookingRequest request = new BookingRequest(USER_ID, EVENT_ID, 1);
+        BookingResponse response = bookingService.createBooking(request);
+        LocalDateTime afterCreation = LocalDateTime.now();
+
+        assertThat(response.expiresAt()).isNotNull();
+        // Expiry must be strictly in the future
+        assertThat(response.expiresAt()).isAfter(afterCreation);
+        // Expiry must be at least 10 minutes in the future from beforeCreation
+        assertThat(response.expiresAt()).isAfterOrEqualTo(beforeCreation.plusMinutes(10));
+        // Expiry must not exceed 10 minutes + 2 seconds buffer
+        assertThat(response.expiresAt()).isBeforeOrEqualTo(afterCreation.plusMinutes(10).plusSeconds(2));
+    }
+
+    @Test
+    @DisplayName("Regression: Custom payment window configuration sets future expiry accurately")
+    void createBooking_WithCustomPaymentWindow_CalculatesFutureExpiry() {
+        BookingService customService = new BookingService(
+                bookingRepository,
+                inventoryRepository,
+                userRepository,
+                eventRepository,
+                15 // 15-minute window
+        );
+
+        User user = buildUser();
+        Event event = buildEvent();
+        Inventory inventory = buildInventory(event, 50, 0, 0);
+
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(inventoryRepository.findByEventIdWithLock(EVENT_ID)).thenReturn(Optional.of(inventory));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
+            Booking b = inv.getArgument(0);
+            ReflectionTestUtils.setField(b, "id", BOOKING_ID);
+            return b;
+        });
+
+        LocalDateTime beforeCreation = LocalDateTime.now();
+        BookingResponse response = customService.createBooking(new BookingRequest(USER_ID, EVENT_ID, 1));
+        LocalDateTime afterCreation = LocalDateTime.now();
+
+        assertThat(response.expiresAt()).isAfter(afterCreation);
+        assertThat(response.expiresAt()).isAfterOrEqualTo(beforeCreation.plusMinutes(15));
+        assertThat(response.expiresAt()).isBeforeOrEqualTo(afterCreation.plusMinutes(15).plusSeconds(2));
+    }
+
+    @Test
+    @DisplayName("Regression: Zero or negative payment window configuration falls back to 10 minutes")
+    void createBooking_WithNonPositivePaymentWindow_FallsBackToDefaultTenMinutes() {
+        BookingService fallbackService = new BookingService(
+                bookingRepository,
+                inventoryRepository,
+                userRepository,
+                eventRepository,
+                -5 // invalid non-positive window
+        );
+
+        User user = buildUser();
+        Event event = buildEvent();
+        Inventory inventory = buildInventory(event, 50, 0, 0);
+
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(inventoryRepository.findByEventIdWithLock(EVENT_ID)).thenReturn(Optional.of(inventory));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
+            Booking b = inv.getArgument(0);
+            ReflectionTestUtils.setField(b, "id", BOOKING_ID);
+            return b;
+        });
+
+        LocalDateTime beforeCreation = LocalDateTime.now();
+        BookingResponse response = fallbackService.createBooking(new BookingRequest(USER_ID, EVENT_ID, 1));
+        LocalDateTime afterCreation = LocalDateTime.now();
+
+        assertThat(response.expiresAt()).isAfter(afterCreation);
+        assertThat(response.expiresAt()).isAfterOrEqualTo(beforeCreation.plusMinutes(10));
+        assertThat(response.expiresAt()).isBeforeOrEqualTo(afterCreation.plusMinutes(10).plusSeconds(2));
     }
 }

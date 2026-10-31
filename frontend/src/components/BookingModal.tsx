@@ -16,6 +16,7 @@ import {
 import type { Event, BookingResponse, BookingConfirmationResponse } from '../types'
 import { createBooking, confirmBooking, ApiRequestError } from '../api/client'
 import { TicketPass } from './TicketPass'
+import { calculateCountdown } from '../utils/date'
 
 interface BookingModalProps {
   event: Event
@@ -63,26 +64,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (step !== 'reserved' || !pendingBooking) return
 
     const updateCountdown = () => {
-      try {
-        const expiresAt = new Date(pendingBooking.expiresAt).getTime()
-        const now = Date.now()
-        const diffMs = expiresAt - now
-
-        if (diffMs <= 0) {
-          setTimeLeftStr('00:00')
-          setIsExpired(true)
-          return
-        }
-
-        const totalSecs = Math.floor(diffMs / 1000)
-        const mins = Math.floor(totalSecs / 60)
-        const secs = totalSecs % 60
-        setTimeLeftStr(
-          `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-        )
-      } catch {
-        setTimeLeftStr('--:--')
-      }
+      const countdown = calculateCountdown(pendingBooking.expiresAt)
+      setTimeLeftStr(countdown.timeLeftStr)
+      setIsExpired(countdown.isExpired)
     }
 
     updateCountdown()

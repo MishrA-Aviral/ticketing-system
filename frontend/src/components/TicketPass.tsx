@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Ticket as TicketIcon, Calendar, MapPin, Copy, Check, QrCode } from 'lucide-react'
 import type { Ticket } from '../types'
+import { parseApiDateTime } from '../utils/date'
 
 interface TicketPassProps {
   ticket: Ticket
@@ -27,7 +28,9 @@ export const TicketPass: React.FC<TicketPassProps> = ({
 
   const formatIssuedTime = (isoStr: string) => {
     try {
-      const d = new Date(isoStr)
+      const timestamp = parseApiDateTime(isoStr)
+      if (isNaN(timestamp)) return isoStr
+      const d = new Date(timestamp)
       return d.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',

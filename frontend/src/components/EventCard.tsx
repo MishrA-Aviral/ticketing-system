@@ -1,6 +1,7 @@
 import React from 'react'
 import { Calendar, MapPin, Tag, ArrowRight, Music2, Sparkles } from 'lucide-react'
 import type { Event } from '../types'
+import { parseApiDateTime } from '../utils/date'
 
 interface EventCardProps {
   event: Event
@@ -11,7 +12,8 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onSelect }) => {
   // Format the ISO date
   const parseEventDate = (dateStr: string) => {
     try {
-      const date = new Date(dateStr)
+      const timestamp = parseApiDateTime(dateStr)
+      const date = isNaN(timestamp) ? new Date(dateStr) : new Date(timestamp)
       if (isNaN(date.getTime())) return { dateText: dateStr, timeText: '', countdown: '' }
 
       const dateOptions: Intl.DateTimeFormatOptions = {
